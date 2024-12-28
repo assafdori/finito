@@ -42,10 +42,10 @@ output "application_subnet_ids" {
   value = module.vpc.application_subnet_ids
 }
 
-output "vpc_endpoints" {
-  description = "Map of VPC endpoints"
-  value = module.vpc-interface-endpoints.endpoint_map
-}
+#output "vpc_endpoints" {
+#  description = "Map of VPC endpoints"
+#  value = module.vpc-interface-endpoints.endpoint_map
+#}
 
 output "load_balancer_security_group_id" {
   value =  aws_security_group.load_balancer_security_group.id
