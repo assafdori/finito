@@ -1,0 +1,13 @@
+image:
+  repository: assafdori/flask-app
+  tag: latest
+
+service:
+  port: 5001
+  nodePort: 32371
+
+s3:
+  bucketName: "technion-final-bucket-528194"
+  objectName: "fullarch.png"
+
+databaseUri: "mysql+pymysql://admin:admin@mysql-db:3306/flask_app"
