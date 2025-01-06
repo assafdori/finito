@@ -178,5 +178,3 @@ This project is licensed under the MIT License – see the [LICENSE](LICENSE) fi
 - **GitOps**: Optionally deploy the application automatically using GitOps principles (e.g., with ArgoCD).
 
 ---
-
-This README provides a concise yet comprehensive overview of the entire project, covering setup and usage for each component (Docker, Terraform, Helm, etc.), and gives users a clear understanding of how to deploy and manage the system. Let me know if you need more adjustments or clarifications!
