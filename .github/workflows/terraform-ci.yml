@@ -1,0 +1,131 @@
+name: Terraform GitOps Pipeline
+run-name: Running TerraformCD Workflow
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/v2/**'
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    paths:
+      - 'infra/v2/**'
+  workflow_dispatch:
+    inputs:
+      LOG_LEVEL:
+        description: "Set the logging level for Terraform execution"
+        required: true
+        type: choice
+        options:
+          - "DEBUG"
+          - "INFO"
+          - "WARN"
+          - "ERROR"
+        default: "INFO"
+
+env:
+  TERRAFORM_VERSION: "1.10.3"
+  REGION: "us-west-2"
+
+jobs:
+  terraform-initialization:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Fetch Repository Code
+        uses: actions/checkout@v3
+
+      - name: Install Git
+        run: |
+          echo "Updating and installing Git..."
+          sudo yum update -y
+          sudo yum install git -y
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Install Docker Engine
+        run: |
+          echo "Setting up Docker..."
+          sudo yum update -y
+          sudo yum install docker -y
+          sudo systemctl start docker
+          sudo systemctl enable docker
+          sudo usermod -aG docker ec2-user
+          newgrp docker
+          sudo chmod 666 /var/run/docker.sock
+
+      - name: Install Node.js (v14)
+        uses: actions/setup-node@v3
+        with:
+          node-version: '14'
+
+      - name: Terraform Initialization
+        working-directory: infrastructure-tf
+        run: terraform init
+
+      - name: Terraform Plan Execution
+        working-directory: infrastructure-tf
+        run: terraform plan -out=tfplan -input=false
+        env:
+          AWS_REGION: ${{ env.REGION }}
+          TF_LOG: ${{ inputs.LOG_LEVEL }}
+
+      - name: Upload Terraform Plan Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan
+          path: infra/v2/tf_plan
+
+  approval-required:
+    needs: terraform-initialization
+    runs-on: self-hosted
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ secrets.GH_PAT }}
+          approvers: ${{ vars.APPROVALS }}
+          minimum-approvals: 1
+          issue-title: "Terraform Apply Approval Request"
+          issue-body: |
+            Please review the plan and approve or deny the application of changes.
+
+  apply-terraform-plan:
+    needs: approval-required
+    runs-on: self-hosted
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download Terraform Plan Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: tfplan
+
+      - name: Install Node.js (v14)
+        uses: actions/setup-node@v3
+        with:
+          node-version: '14'
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          TF_LOG: ${{ inputs.LOG_LEVEL }}
+
+      - name: Apply Terraform Plan
+        working-directory: infrastructure-tf
+        run: terraform apply -input=false tfplan
+        env:
+          AWS_REGION: ${{ env.REGION }}
+          TF_LOG: ${{ inputs.LOG_LEVEL }}

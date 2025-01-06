@@ -1,0 +1,80 @@
+name: Deploy Kind Cluster on EC2 Instance
+run-name: Deploying Kind Cluster on ${{ inputs.EC2_IP }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      EC2_IP:
+        description: "The EC2 instance IP for the Kind Cluster"
+        required: true
+
+jobs:
+  setup-kind-cluster:
+    runs-on: self-hosted
+
+    steps:
+      # Step 1: Clone Repository
+      - name: Clone Repository Files
+        uses: actions/checkout@v3
+
+      # Step 2: SSH to EC2 and Install Kind + Dependencies
+      - name: Install Docker, Kind, and kubectl on EC2
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ inputs.EC2_IP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          script: |
+            # System update to ensure latest packages
+            echo "Updating system packages..."
+            sudo yum update -y
+
+            # Install Docker
+            echo "Installing Docker..."
+            sudo yum install -y docker
+            sudo systemctl enable docker --now
+            sudo usermod -aG docker $USER
+            newgrp docker
+            sudo chmod 666 /var/run/docker.sock
+
+            # Download and Install Kind
+            echo "Installing Kind..."
+            curl -Lo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+            sudo chmod +x /usr/local/bin/kind
+
+            # Install kubectl
+            echo "Installing kubectl..."
+            curl -LO "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            sudo chmod +x kubectl
+            sudo mv kubectl /usr/local/bin/kubectl
+
+            # Check kubectl installation
+            echo "Checking kubectl version..."
+            kubectl version --client
+
+            # Define and create Kind Cluster
+            echo "Creating Kind Cluster with custom ports..."
+            kind create cluster --name my-kind-cluster --config - <<EOF
+            kind: Cluster
+            apiVersion: kind.x-k8s.io/v1alpha4
+            nodes:
+            - role: control-plane
+              extraPortMappings:
+              - containerPort: 80
+                hostPort: 80
+              - containerPort: 443
+                hostPort: 443
+              - containerPort: 30080
+                hostPort: 30080
+              - containerPort: 30081
+                hostPort: 30081
+              - containerPort: 30082
+                hostPort: 30082
+              - containerPort: 32371 # Exposing Flask app
+                hostPort: 32371
+            EOF
+
+            # Verify Kind cluster is healthy
+            echo "Verifying the cluster info..."
+            kubectl cluster-info --context kind-my-kind-cluster

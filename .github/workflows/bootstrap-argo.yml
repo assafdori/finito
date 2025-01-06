@@ -1,0 +1,75 @@
+name: Configure Helm and ArgoCD on Kind EC2 Instance
+run-name: Configuring Helm & ArgoCD on EC2 at ${{ inputs.EC2_IP }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      EC2_IP:
+        description: "IP address of the Kind EC2 instance"
+        required: true
+
+jobs:
+  install-helm-argocd:
+    runs-on: self-hosted
+
+    steps:
+      # Step 1: Checkout Code from Repository
+      - name: Checkout Repository Code
+        uses: actions/checkout@v3
+
+      # Step 2: SSH into EC2 and Install Dependencies
+      - name: SSH to EC2 and Install Helm & ArgoCD
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ inputs.EC2_IP }}
+          username: ec2-user
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          script: |
+            # Update the System (only if required)
+            sudo yum update -y
+
+            # Install Git if missing
+            if ! command -v git >/dev/null 2>&1; then
+              echo "Installing Git..."
+              sudo yum install -y git
+            else
+              echo "Git already installed."
+            fi
+
+            # Install Helm if not already installed
+            if ! command -v helm >/dev/null 2>&1; then
+              echo "Installing Helm..."
+              curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+            else
+              echo "Helm is already installed."
+            fi
+
+            # Adding Bitnami Helm Repo and updating it
+            echo "Adding Bitnami Helm repo..."
+            helm repo add bitnami https://charts.bitnami.com/bitnami
+            helm repo update
+
+            # Clean-up any previous MySQL releases and Install a new one
+            helm uninstall mysql-db --no-hooks || echo "No existing MySQL release found."
+            echo "Installing MySQL via Helm..."
+            helm install mysql-db bitnami/mysql \
+              --set auth.rootPassword=admin \
+              --set auth.username=admin \
+              --set auth.password=admin \
+              --set auth.database=flask_app
+
+            # Install ArgoCD CLI if not installed
+            if ! command -v argocd >/dev/null 2>&1; then
+              echo "Installing ArgoCD CLI..."
+              sudo curl -sSL https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64 \
+                -o /usr/local/bin/argocd
+              sudo chmod +x /usr/local/bin/argocd
+            else
+              echo "ArgoCD CLI already installed."
+            fi
+
+            # Deploy ArgoCD to the Kind Cluster
+            echo "Setting up ArgoCD in the Kind cluster..."
+            kubectl create namespace argocd || echo "ArgoCD namespace already exists."
+            kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
