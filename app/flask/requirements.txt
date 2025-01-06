@@ -1,0 +1,7 @@
+Flask
+Flask-SQLAlchemy
+SQLAlchemy
+Werkzeug
+boto3
+pymysql
+cryptography
